@@ -304,6 +304,8 @@ struct DWriteContext {
     IDWriteGdiInterop *mGdiInterop;
     IDWriteRenderingParams *mRenderingParams;
 
+    IDWriteFontCollection* mFontCollection;
+
     FontCache mFontCache;
     IDWriteTextFormat *mTextFormat;
     DWRITE_FONT_WEIGHT mFontWeight;
@@ -697,6 +699,15 @@ DWriteContext::DWriteContext() :
 	_RPT2(_CRT_WARN, "CreateRenderingParams: hr=%p p=%p\n", hr,
 		mRenderingParams);
     }
+
+    if (SUCCEEDED(hr))
+    {
+	hr = mDWriteFactory->GetSystemFontCollection(&mFontCollection);
+
+	_RPT2(_CRT_WARN, "GetSystemFontCollection: hr=%p p=%p\n", hr,
+		mFontCollection);
+    }
+
 }
 
 DWriteContext::~DWriteContext()
@@ -713,6 +724,7 @@ DWriteContext::~DWriteContext()
     SafeRelease(&mGDIRT);
     SafeRelease(&mRT);
     SafeRelease(&mD2D1Factory);
+    SafeRelease(&mFontCollection);
 }
 
     HRESULT
@@ -1072,6 +1084,7 @@ DWriteContext::DrawText(const WCHAR *text, int len,
 
     HRESULT hr;
     IDWriteTextLayout *textLayout = NULL;
+    IDWriteTextLayout2 *textLayout2 = NULL;
 
     SetDrawingMode(DM_DIRECTX);
 
@@ -1087,11 +1100,47 @@ DWriteContext::DrawText(const WCHAR *text, int len,
     hr = mDWriteFactory->CreateTextLayout(text, len, mTextFormat,
 	    FLOAT(w), FLOAT(h), &textLayout);
 
+
     if (SUCCEEDED(hr))
     {
 	DWRITE_TEXT_RANGE textRange = { 0, UINT32(len) };
 	textLayout->SetFontWeight(mFontWeight, textRange);
 	textLayout->SetFontStyle(mFontStyle, textRange);
+
+	{
+	    // FALLBACK BEGINS
+
+	    HRESULT hr = textLayout->QueryInterface(
+		__uuidof(IDWriteTextLayout2),
+		reinterpret_cast<void**>(&textLayout2)
+	    );
+	    if (SUCCEEDED(hr))
+	    {
+		IDWriteFontFallbackBuilder* pFallbackBuilder = nullptr;
+		HRESULT hr = mDWriteFactory2->CreateFontFallbackBuilder(&pFallbackBuilder);
+		if (SUCCEEDED(hr))
+		{
+
+		    static constexpr DWRITE_UNICODE_RANGE fullRange{ 0, 0x10FFFF };
+
+		    const wchar_t* fallbackFonts[] = { L"Symbols Nerd Font",  L"Chiron Hei HK",  L"Sarasa Fixed CL" };
+
+		    pFallbackBuilder->AddMapping(
+			&fullRange, 1,
+			fallbackFonts, sizeof(fallbackFonts) / sizeof(fallbackFonts[0]),
+			mFontCollection
+		    );
+
+		    IDWriteFontFallback* pFallback = nullptr;
+		    pFallbackBuilder->CreateFontFallback(&pFallback);
+		    SafeRelease(&pFallbackBuilder);
+
+		    textLayout2->SetFontFallback(pFallback);
+		    SafeRelease(&pFallback);
+		}
+	    }
+	    // FALLBACK ENDS
+	}
 
 	if (mFontFeatureCount > 0)
 	{
@@ -1159,6 +1208,7 @@ DWriteContext::DrawText(const WCHAR *text, int len,
     }
 
     SafeRelease(&textLayout);
+    SafeRelease(&textLayout2);
 
     if ((fuOptions & ETO_CLIPPED) && lprc != NULL)
 	mRT->PopAxisAlignedClip();
