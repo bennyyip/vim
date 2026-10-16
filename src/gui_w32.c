@@ -6992,33 +6992,69 @@ gui_mch_draw_string(
     // Underline
     if (flags & DRAW_UNDERL)
     {
+	int thickness = MAX(1, gui.char_height / 12);  // Scale thickness
+	int i;
 	// When p_linespace is 0, overwrite the bottom row of pixels.
 	// Otherwise put the line just below the character.
 	y = FILL_Y(row + 1) - 1;
 	if (p_linespace > 1)
 	    y -= p_linespace - 1;
-	draw_line(FILL_X(col), y, FILL_X(col + len), y, gui.currFgColor);
+	for (i = 0; i < thickness; ++i)
+	    draw_line(FILL_X(col), y - i, FILL_X(col + len), y - i, gui.currFgColor);
     }
 
     // Strikethrough
     if (flags & DRAW_STRIKE)
     {
+	int thickness = MAX(1, gui.char_height / 12);  // Scale thickness
+	int i;
 	y = FILL_Y(row + 1) - gui.char_height/2;
-	draw_line(FILL_X(col), y, FILL_X(col + len), y, gui.currSpColor);
+	for (i = 0; i < thickness; ++i)
+	    draw_line(FILL_X(col), y - i, FILL_X(col + len), y - i, gui.currSpColor);
     }
 
     // Undercurl
     if (flags & DRAW_UNDERC)
     {
-	int			x;
-	int			offset;
-	static const int	val[8] = {1, 0, 0, 0, 1, 2, 2, 2 };
+	int			y1, y2, x1, x2, dx, dy, odd;
+	int			thickness = MAX(1, gui.char_height / 12);
+	int			wave_height =  thickness;
+	int			wave_length = 2 * thickness;
+	int			flat_length = wave_length / 2;  // Flat segment length
+	int			xmax;
 
 	y = FILL_Y(row + 1) - 1;
-	for (x = FILL_X(col); x < FILL_X(col + len); ++x)
+	x1 = FILL_X(col);
+	xmax = FILL_X(col + len);
+
+	dx = wave_length;
+	dy = wave_height - 1;
+
+	/* Start from aligned position */
+	x1 = x1 - (x1 % dx);
+	odd = (x1 / dx) % 2;
+
+	/* Draw the waves */
+	while (x1 <= xmax)
 	{
-	    offset = val[x % 8];
-	    set_pixel(x, y - offset, gui.currSpColor);
+	    int i;
+	    x2 = x1 + flat_length;
+	    y1 = odd ? y - dy : y;
+	    y2 = y1;
+
+	    /* Draw flat segment */
+	    for (i = 0; i < thickness; ++i)
+		draw_line(x1, y1 - i, x2, y2 - i, gui.currSpColor);
+
+	    /* Draw diagonal segment */
+	    x1 = x2;
+	    x2 = x1 + flat_length;
+	    y2 = odd ? y : y - dy;
+	    for (i = 0; i < thickness; ++i)
+		draw_line(x1, y1 - i, x2, y2 - i, gui.currSpColor);
+
+	    x1 = x2;
+	    odd = !odd;
 	}
     }
 }
